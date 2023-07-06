@@ -14,7 +14,6 @@
 
 #include <cmath>
 #include <iostream>
-#include <time.h>
 #include <vector>
 
 #define PI 3.14159265358979323846
@@ -251,52 +250,63 @@ void solve_IK(float *pose, float *joints) {
     for (int i = 0; i < 6; i++) joints[i] *= RAD_TO_DEG;
 }
 
-void test_IK() { 
-    float IK_in[6], IK_out[6], FK_out[6];
-    bool error_flag = false; 
-    const float tol = 0.1;
-    int num_errors = 0;
-    int iterations = 20; 
-    clock_t time1 = clock();
-    for (int i = 0; i < iterations; i++) { 
-        error_flag = false; 
-        IK_in[0] = rand() % 200; // these can be set to whatever
-        IK_in[1] = rand() % 200;
-        IK_in[2] = rand() % 800;
-        IK_in[3] = 1 + rand() % 89; 
-        IK_in[4] = 1 + rand() % 89;  
-        IK_in[5] = 1 + rand() % 179;
-        float IK_in_copy[6] = {IK_in[0], IK_in[1], IK_in[2], IK_in[3], IK_in[4], IK_in[5]};
-        solve_IK(IK_in, IK_out);
-        solve_FK(IK_out, FK_out);
-        //print_matrix(IK_in_copy, 6, 1);
-        //print_matrix(FK_out, 6, 1);
-        for (int j = 0; j < 6; j++) {
-            float error = fabsf(IK_in_copy[j] - FK_out[j]);
-            if (j == 5) {
-                float j6_error = fabsf(fabsf(IK_in_copy[j]) - fabsf(FK_out[j]));
-                if (j6_error > tol) {
-                    printf("Error of %f in solve %i at joint %i \n", j6_error, i+1, j+1);
-                    error_flag = true; 
-                    num_errors++;
-                }
-                continue; 
-            }
-            if (error > tol) {
-                printf("Error of %f in solve %i at joint %i \n", error, i+1, j+1);
-                error_flag = true; 
-                num_errors++;
-            }
-        }
-        if (!error_flag) {
-            //printf("Solve was successful - IKin matches FKout \n"); 
-        }
-    }   
-    clock_t time2 = clock();
-    double elapsed = double(time2 - time1)/CLOCKS_PER_SEC;
-    printf("Number of total errors: %i \n", num_errors);
-    double time_per_iteration = elapsed / iterations*1000000; 
-    printf("Test took: %.3f seconds with %i iterations, averaging %.3f microseconds per solve \n", elapsed, iterations, time_per_iteration);
+void generate_line_path(std::vector<point_3D> &path_vec, point_3D start_point, point_3D end_point, const float stepsize_mm) {
+  float vector_mag = sqrt(pow(end_point.x-start_point.x,2)+pow(end_point.y-start_point.y,2)+pow(end_point.z-start_point.z,2)); // mm
+  int num_steps = vector_mag / stepsize_mm; 
+  point_3D unitvector = {(end_point.x - start_point.x) / vector_mag, (end_point.y - start_point.y) / vector_mag, (end_point.z - start_point.z) / vector_mag};
+  //printf("[ %f, %f, %f ] \n", unitvector.x, unitvector.y, unitvector.z);
+  for (int i = 1; i <= num_steps; i++) {
+    point_3D pushback_point = {start_point.x+unitvector.x*stepsize_mm*i, start_point.y+unitvector.y*stepsize_mm*i, start_point.z+unitvector.z*stepsize_mm*i};
+    path_vec.push_back(pushback_point);
+  }
+  float tgt_xyz_error = sqrt(pow(end_point.x-path_vec.back().x,2)+pow(end_point.y-path_vec.back().y,2)+pow(end_point.z-path_vec.back().z,2));
+  printf("num steps: %i \t vector size: %i \t xyz error: %f \n", num_steps, int(path_vec.size()), tgt_xyz_error);
+  int num_kb = sizeof(point_3D) * int(path_vec.size()) * 0.001;  
+  printf("xyz vector size: %iK \n", num_kb);
+}
+
+void execute_path(std::vector<point_3D> &path_vec, point_3D start_point, const float *effector_pose) {
+  float prev_IK_out[6];
+  float IK_out[6];
+  float start_IK_in[6] = {start_point.x, start_point.y, start_point.z, effector_pose[0], effector_pose[1], effector_pose[2]};
+  float final_IK_in[6] = {path_vec.back().x, path_vec.back().y, path_vec.back().z, effector_pose[0], effector_pose[1], effector_pose[2]};
+  solve_IK(start_IK_in, prev_IK_out);
+
+  while (path_vec.size() > 0) {
+    // pseudocode go-to-point path_vec.front();
+    // should use straight line path movement function that accepts mm/s velocity argument  
+   
+    float IK_in[6] = {path_vec.front().x, path_vec.front().y, path_vec.front().z, effector_pose[0], effector_pose[1], effector_pose[2]};
+    solve_IK(IK_in, IK_out);
+
+    float angle_difference[6]; 
+    for (int i = 0; i < 6; i++) {
+      angle_difference[i] = floor((IK_out[i] - prev_IK_out[i]) * STEPS_PER_DEG[i]);
+      prev_IK_out[i] = prev_IK_out[i] + angle_difference[i] * DEGS_PER_STEP[i];
+    }
+    //print_matrix(angle_difference, 6, 1);
+    //printArray(prev_IK_out, 6);
+
+    path_vec.erase(path_vec.begin());
+    // pseudocode for micros() delay to satisfy mm/s velocity cmd
+  }
+
+  printf("Path end pose: ");
+  print_matrix(prev_IK_out, 6, 1);
+  
+  float final_IK_out[6]; 
+  solve_IK(final_IK_in, final_IK_out);
+  printf("Initial calculated end pose: ");
+  print_matrix(final_IK_out, 6, 1);
+
+  float correction_angles[6]; 
+  for (int i = 0; i < 6; i++) correction_angles[i] = final_IK_out[i] - prev_IK_out[i]; 
+  printf("Correction angles: ");
+  print_matrix(correction_angles, 6, 1);
+
+  float test[6];
+  solve_FK(prev_IK_out, test);
+  print_matrix(test, 6, 1);
 }
 
 int main(int argc, char **argv) {
@@ -308,6 +318,7 @@ int main(int argc, char **argv) {
     // output array is ordered [J1, J2, J3, J4, J5, J6] where all joint angles J reference JOINT FRAME
     // the opposite is true for solve_FK
     
+    /*
     float IK_in[6] = {150, 0, 550, 0, 90, 180};
     float IK_out[6] = {0, 0, 0, 0, 0, 0};
     solve_IK(IK_in, IK_out);
@@ -317,7 +328,30 @@ int main(int argc, char **argv) {
     
     print_matrix(IK_out, 6, 1);
     print_matrix(FK_out, 6, 1);
+    */
+
+    
+    point_3D home_point_xyz = {323.08, 0, 474.77};
+    const float effector_fwd[3] = {0, 90, 180}; 
+    point_3D desired_point = {323.08, 0, 200};  
+    std::vector<point_3D> point_list;
+
+    generate_line_path(point_list, home_point_xyz, desired_point, 0.1);
+    execute_path(point_list, home_point_xyz, effector_fwd);
     
 }
 
+// SERIAL MESSAGE STRUCTURE:
+// < {command id} : {command} >
+// ":" characters tell parser when to expect next topic
+// "< and >" chars tell parser when message begins / ends
 
+// if command id = 0 -> angular velocity command
+// {command} = {motor number} : {enable or disable} : {angular velocity}
+
+// if command id = 1 -> IK setpoint command
+// {command} = {ena straight line path} : {path speed} : {X0} : {Y0} : {Z0} : {Z_rot} : {Y_rot} : {Z_rot}
+// {ena straight line path} 1 = enable, 0 = disable | if disabled, path speed (mm/s) can be set to 0 
+
+// if command id = 2 -> direct joint angle command
+// {command} = {J1} : {J2} : {J3} : {J4} : {J5} : {J6}
