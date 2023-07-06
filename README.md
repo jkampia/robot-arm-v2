@@ -1,2 +1,3 @@
 # robot-arm-v2
-:D
+
+6dof Inverse Kinematics for a typical robotic arm
