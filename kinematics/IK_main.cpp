@@ -26,8 +26,8 @@ const double DEGS_PER_STEP[6] = {0.01125, 0.01125, 0.01125, 0.01125, 0.01125, 0.
 
 float dh_theta[6] = {0, -PI_2, 0, 0, 0, 0};
 const float dh_alpha[6] = {-PI_2, 0, -PI_2, PI_2, -PI_2, 0};
-const float dh_d[6] = {169.77, 0, 0, 222.63, 0, 36.25};
-const float dh_a[6] = {0, 305, 0, 0, 0, 0}; 
+const float dh_d[6] = {167.01, 0, 0, 174.39, 0, 0};
+const float dh_a[6] = {0, 181.04, 0, 0, 0, 0}; 
 
 struct point_3D {
     float x, y, z;
@@ -307,16 +307,30 @@ int main(int argc, char **argv) {
     // input array is ordered [X_0, Y_0, Z_0, Z_rot, Y_rot, Z_rot] where _0 and _rot denote reference to GLOBAL FRAME 
     // output array is ordered [J1, J2, J3, J4, J5, J6] where all joint angles J reference JOINT FRAME
     // the opposite is true for solve_FK
-    
-    float IK_in[6] = {150, 0, 550, 0, 90, 180};
+    float home[6] = {174.39, 0, 348.049988, 0, 90, 180};
+    float IK_in[6] = {174.39, 0, 400, 0, 90, 180};
     float IK_out[6] = {0, 0, 0, 0, 0, 0};
+
+    /*
+    printf("solve_IK input: \n");
+    print_matrix(IK_in, 6, 1);
+    printf("\n");
+    */
+
     solve_IK(IK_in, IK_out);
 
+    float FK_in[6] = {0, 0, 0, 0, 0, 0};
     float FK_out[6] = {0, 0, 0, 0, 0, 0};
-    solve_FK(IK_out, FK_out);
+    solve_FK(FK_in, FK_out);
     
+    
+    printf("solve_IK output: \n");
     print_matrix(IK_out, 6, 1);
+    printf("\n");
+    
+    printf("solve_FK output: \n");
     print_matrix(FK_out, 6, 1);
+    printf("\n");
     
 }
 
